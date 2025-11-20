@@ -1,0 +1,26 @@
+.seviceAccountKey.json
+.env
+
+# Node modules
+node_modules/
+
+# Env
+.env
+.env.local
+.env.development
+.env.production
+
+# Firebase / service accounts
+*.serviceAccountKey.json
+
+# Logs
+*.log
+
+# Uploaded files
+uploads/
+
+# Mac system files
+.DS_Store
+
+
+*.serviceAccountKey.json
