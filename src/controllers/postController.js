@@ -1,16 +1,19 @@
+
 import Post from "../models/postModel.js";
 import CropCircle from "../models/cropCircleModel.js";
-
-// ------------------------------------------------------------
-// CREATE POST
-// ------------------------------------------------------------
+import path from "path";
+import fs from "fs";
 export const createPost = async (req, res) => {
   try {
-    const { user_id, circle_id, content, media_url, type } = req.body;
-    console.log("[CREATE POST] Req body:", req.body);
+    const { user_id, circle_id, content, type } = req.body;
+    let media_url = null;
 
-    if (!user_id || !circle_id || !content) {
-      console.log("[CREATE POST] Missing required fields");
+    // If an image is uploaded, set the media_url
+    if (req.file) {
+      media_url = `/uploads/${req.file.filename}`; // relative URL for frontend
+    }
+
+    if (!user_id || !circle_id || (!content && !media_url)) {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
@@ -26,15 +29,11 @@ export const createPost = async (req, res) => {
     });
 
     await newPost.save();
-    console.log("[CREATE POST] Post saved:", newPost._id);
 
+    // Notify mentors for questions
     if (type === "question") {
-      const circle = await CropCircle.findById(circle_id).populate(
-        "mentors",
-        "name email"
-      );
-
-      circle?.mentors?.forEach((mentor) => {
+      const circle = await CropCircle.findById(circle_id).populate("mentors", "name email");
+      circle?.mentors?.forEach(mentor => {
         console.log(`Notify mentor ${mentor.name} about a new question.`);
       });
     }

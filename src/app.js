@@ -7,6 +7,7 @@ import postRoutes from "./routes/postRoutes.js";
 import cropCircleRoutes from "./routes/cropCircleRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
+
 import path from "path";
 
 
@@ -22,7 +23,9 @@ app.use(cors({
   credentials: true
 }));
 
+// Serve uploads folder
 app.use("/uploads", express.static(path.join(path.resolve(), "uploads")));
+
 app.use(express.json());
 
 // Routes

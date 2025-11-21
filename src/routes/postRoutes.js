@@ -9,11 +9,14 @@ import {
   deleteComment,
   editPost
 } from "../controllers/postController.js";
+import upload from "../middleware/upload.js";
+
 
 const router = express.Router();
 
 // CREATE POST
-router.post("/create", createPost);
+
+router.post("/create", upload.single("image"), createPost);
 
 // GET POSTS OF A CIRCLE  (IMPORTANT: FIXED)
 router.get("/circle/:circle_id", getPostsByCircle);
