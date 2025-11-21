@@ -1,50 +1,69 @@
 // src/controllers/cropCircleController.js
 import CropCircle from "../models/cropCircleModel.js";
 import User from "../models/userModel.js";
-import { getDistrictFromGPS } from "../utils/geoUtils.js";
 
-// Join or Create Crop Circle
+export const loginUser = async (req, res) => {
+  const { email, password } = req.body;
+  const user = await User.findOne({ email });
+
+  if (!user) return res.status(404).json({ message: "User not found" });
+
+  // validate password or Google login here
+  
+  let circle = null;
+  if (user.joined_circle) {
+    circle = await CropCircle.findById(user.joined_circle);
+  }
+
+  res.status(200).json({
+    user,
+    circle, // returns null if not joined yet
+  });
+};
+// Join or Create Crop Circle (manual district selection)
 export const joinOrCreateCircle = async (req, res) => {
   try {
-    const { user_id, crop_name, gps_lat, gps_lng } = req.body;
+    const { user_id, crop_name, district } = req.body;
 
-    if (!user_id || !crop_name || !gps_lat || !gps_lng) {
+    // ✅ Validate input
+    if (!user_id || !crop_name || !district) {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
-    // 1️⃣ Detect district
-    const district = await getDistrictFromGPS(gps_lat, gps_lng);
-    if (!district) {
-      return res.status(400).json({ message: "Unable to detect district" });
-    }
-
-    // 2️⃣ Fetch user info
+    // 1️⃣ Fetch user
     const user = await User.findById(user_id);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // 3️⃣ Find existing circle
+    // 1.5️⃣ Check if user already has a joined circle
+    if (user.joined_circle) {
+      const existingCircle = await CropCircle.findById(user.joined_circle);
+      return res.status(200).json({
+        message: `You have already joined a Crop Circle for ${existingCircle.crop_name} in ${existingCircle.district}`,
+        circle: existingCircle,
+      });
+    }
+
+    // 2️⃣ Find existing circle for crop + district
     let circle = await CropCircle.findOne({ crop_name, district });
 
     if (circle) {
-      // If already in circle, skip
-      if (circle.members.includes(user_id)) {
-        return res.status(200).json({
-          message: `Already part of the Crop Circle for ${crop_name} in ${district}`,
-          circle,
-        });
+      // Add user to circle if not already a member
+      if (!circle.members.includes(user_id)) {
+        circle.members.push(user_id);
+
+        // Assign mentor role if user is expert
+        if (user.experience_level === "expert" && !circle.mentors.includes(user_id)) {
+          circle.mentors.push(user_id);
+        }
+
+        await circle.save();
+
+        // Update user's joined_circle
+        user.joined_circle = circle._id;
+        await user.save();
       }
-
-      // 4️⃣ Add user to circle
-      circle.members.push(user_id);
-
-      // 5️⃣ Assign mentor role if user is "expert"
-      if (user.experience_level === "expert") {
-        circle.mentors.push(user_id);
-      }
-
-      await circle.save();
 
       return res.status(200).json({
         message: `Joined existing Crop Circle for ${crop_name} in ${district}`,
@@ -53,7 +72,7 @@ export const joinOrCreateCircle = async (req, res) => {
       });
     }
 
-    // 6️⃣ Create new circle if none exists
+    // 3️⃣ Create new circle if none exists
     const mentors = user.experience_level === "expert" ? [user_id] : [];
     circle = new CropCircle({
       crop_name,
@@ -63,6 +82,10 @@ export const joinOrCreateCircle = async (req, res) => {
     });
 
     await circle.save();
+
+    // Update user's joined_circle
+    user.joined_circle = circle._id;
+    await user.save();
 
     return res.status(201).json({
       message: `Created new Crop Circle for ${crop_name} in ${district}`,
@@ -75,7 +98,7 @@ export const joinOrCreateCircle = async (req, res) => {
   }
 };
 
-// ✅ Manually assign a mentor to a crop circle (for testing)
+// Manually assign a mentor to a crop circle
 export const assignMentor = async (req, res) => {
   try {
     const { circle_id, user_id } = req.body;
@@ -102,5 +125,41 @@ export const assignMentor = async (req, res) => {
   } catch (error) {
     console.error("Error assigning mentor:", error);
     res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+
+
+
+
+
+// Check if user already joined a crop circle
+export const getMyCircle = async (req, res) => {
+  try {
+    const { user_id } = req.query; // GET request query
+
+    if (!user_id) return res.status(400).json({ message: "user_id is required" });
+
+    const user = await User.findById(user_id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    if (!user.joined_circle) {
+      return res.status(200).json({ alreadyJoined: false });
+    }
+
+    // Fetch circle first
+    const circle = await CropCircle.findById(user.joined_circle);
+
+    // Determine role
+    const role = circle.mentors.includes(user._id) ? "Mentor" : "Learner";
+
+    return res.status(200).json({
+      alreadyJoined: true,
+      role,
+      circle,
+    });
+  } catch (err) {
+    console.error("Error fetching user circle:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 };

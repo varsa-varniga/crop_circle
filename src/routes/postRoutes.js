@@ -21,11 +21,14 @@ router.get("/circle/:circle_id", getPostsByCircle);
 // LIKE / UNLIKE POST
 router.patch("/:postId/like", toggleLikePost);
 
-// Reply to a comment — must come first
-router.post("/posts/:postId/comment/:commentId/reply", replyToComment); 
+router.post("/:postId/comment/:commentId/reply", replyToComment); // MUST come first
+router.post("/:postId/comment", commentOnPost); // top-level comment
+
+
+
 
 // Add a new top-level comment
-router.post("/:postId/comment", commentOnPost);
+
 
 
 // DELETE COMMENT

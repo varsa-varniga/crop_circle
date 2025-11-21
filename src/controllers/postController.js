@@ -149,45 +149,26 @@ export const commentOnPost = async (req, res) => {
 // REPLY TO COMMENT
 // ------------------------------------------------------------
 export const replyToComment = async (req, res) => {
+  const { postId, commentId } = req.params;
+  const { user_id, text } = req.body;
+
   try {
-    const { postId, commentId } = req.params;
-    const { user_id, text } = req.body;
-    console.log("[REPLY] Post ID:", postId, "Comment ID:", commentId, "User ID:", user_id, "Text:", text);
-
-    if (!text || !user_id) {
-      console.log("[REPLY] Missing text or user_id");
-      return res.status(400).json({ message: "Missing text or user_id" });
-    }
-
     const post = await Post.findById(postId);
-    if (!post) {
-      console.log("[REPLY] Post not found");
-      return res.status(404).json({ message: "Post not found" });
-    }
+    if (!post) return res.status(404).json({ message: "Post not found" });
 
-    const comment = post.comments.find(c => c._id.toString() === commentId);
-
-    if (!comment) {
-      console.log("[REPLY] Comment not found in post");
-      return res.status(404).json({ message: "Comment not found" });
-    }
+    // Find the comment by converting commentId to ObjectId
+    const comment = post.comments.id(commentId); // Mongoose subdoc method
+    if (!comment) return res.status(404).json({ message: "Comment not found in post" });
 
     comment.replies.push({ user_id, text });
     await post.save();
-    console.log("[REPLY] Reply added. Total replies for comment:", comment.replies.length);
 
-    const populatedPost = await Post.findById(postId)
-      .populate("user_id", "name profile_photo")
-      .populate("comments.user_id", "name profile_photo")
-      .populate("comments.replies.user_id", "name profile_photo");
-
-    return res.status(201).json({ message: "Reply added", post: populatedPost });
+    res.status(200).json({ post });
   } catch (err) {
-    console.error("[REPLY] Error:", err);
-    return res.status(500).json({ message: "Server error" });
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
   }
 };
-
 // ------------------------------------------------------------
 // DELETE POST
 // ------------------------------------------------------------
