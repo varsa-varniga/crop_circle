@@ -7,6 +7,7 @@ import postRoutes from "./routes/postRoutes.js";
 import cropCircleRoutes from "./routes/cropCircleRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
+import notificationRoutes from "./routes/notificationRoutes.js";
 
 import path from "path";
 
@@ -16,7 +17,7 @@ const app = express();
 
 // Connect MongoDB
 connectDB();
-
+app.use(express.json());
 // Middleware
 app.use(cors({
   origin: "http://localhost:5173",
@@ -26,7 +27,11 @@ app.use(cors({
 // Serve uploads folder
 app.use("/uploads", express.static(path.join(path.resolve(), "uploads")));
 
-app.use(express.json());
+app.use("/api/notifications", notificationRoutes);
+
+
+
+
 
 // Routes
 app.use("/api/auth", authRoutes);

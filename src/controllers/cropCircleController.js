@@ -1,6 +1,7 @@
 // src/controllers/cropCircleController.js
 import CropCircle from "../models/cropCircleModel.js";
 import User from "../models/userModel.js";
+import Notification from "../models/notificationModel.js";
 
 export const loginUser = async (req, res) => {
   const { email, password } = req.body;
@@ -21,22 +22,21 @@ export const loginUser = async (req, res) => {
   });
 };
 // Join or Create Crop Circle (manual district selection)
+// Join or Create Crop Circle (manual district selection)
 export const joinOrCreateCircle = async (req, res) => {
   try {
     const { user_id, crop_name, district } = req.body;
 
-    // ✅ Validate input
     if (!user_id || !crop_name || !district) {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
-    // 1️⃣ Fetch user
     const user = await User.findById(user_id);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // 1.5️⃣ Check if user already has a joined circle
+    // If user already belongs to a circle
     if (user.joined_circle) {
       const existingCircle = await CropCircle.findById(user.joined_circle);
       return res.status(200).json({
@@ -45,24 +45,44 @@ export const joinOrCreateCircle = async (req, res) => {
       });
     }
 
-    // 2️⃣ Find existing circle for crop + district
+    // Check existing circle
     let circle = await CropCircle.findOne({ crop_name, district });
 
     if (circle) {
-      // Add user to circle if not already a member
-      if (!circle.members.includes(user_id)) {
+      const alreadyMember = circle.members.includes(user_id);
+
+      if (!alreadyMember) {
+        // Add to members
         circle.members.push(user_id);
 
-        // Assign mentor role if user is expert
+        // Add mentor if expert
         if (user.experience_level === "expert" && !circle.mentors.includes(user_id)) {
           circle.mentors.push(user_id);
         }
 
         await circle.save();
 
-        // Update user's joined_circle
+        // Mark user joined
         user.joined_circle = circle._id;
         await user.save();
+
+        // --------------------------------------
+        // 🔔 Notify ALL existing circle members
+        // --------------------------------------
+        const existingMembers = circle.members.filter(
+          (mId) => mId.toString() !== user_id.toString()
+        );
+
+        for (let memberId of existingMembers) {
+          await Notification.create({
+            receiver: memberId,
+            sender: user_id,
+            type: "NEW_MEMBER",
+            circle_id: circle._id,
+            message: `${user.name} joined your Crop Circle`,
+            isActive: false,
+          });
+        }
       }
 
       return res.status(200).json({
@@ -72,7 +92,7 @@ export const joinOrCreateCircle = async (req, res) => {
       });
     }
 
-    // 3️⃣ Create new circle if none exists
+    // Create a new circle
     const mentors = user.experience_level === "expert" ? [user_id] : [];
     circle = new CropCircle({
       crop_name,
@@ -83,7 +103,6 @@ export const joinOrCreateCircle = async (req, res) => {
 
     await circle.save();
 
-    // Update user's joined_circle
     user.joined_circle = circle._id;
     await user.save();
 
@@ -92,6 +111,7 @@ export const joinOrCreateCircle = async (req, res) => {
       role: user.experience_level === "expert" ? "Mentor" : "Learner",
       circle,
     });
+
   } catch (error) {
     console.error("Error joining/creating Crop Circle:", error);
     res.status(500).json({ message: "Server error", error: error.message });

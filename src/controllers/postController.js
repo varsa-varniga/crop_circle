@@ -1,16 +1,18 @@
 
 import Post from "../models/postModel.js";
 import CropCircle from "../models/cropCircleModel.js";
+import Notification from "../models/notificationModel.js";  
 import path from "path";
 import fs from "fs";
+
+
 export const createPost = async (req, res) => {
   try {
     const { user_id, circle_id, content, type } = req.body;
     let media_url = null;
 
-    // If an image is uploaded, set the media_url
     if (req.file) {
-      media_url = `/uploads/${req.file.filename}`; // relative URL for frontend
+      media_url = `/uploads/${req.file.filename}`;
     }
 
     if (!user_id || !circle_id || (!content && !media_url)) {
@@ -30,12 +32,56 @@ export const createPost = async (req, res) => {
 
     await newPost.save();
 
-    // Notify mentors for questions
-    if (type === "question") {
-      const circle = await CropCircle.findById(circle_id).populate("mentors", "name email");
-      circle?.mentors?.forEach(mentor => {
-        console.log(`Notify mentor ${mentor.name} about a new question.`);
-      });
+    // ------------------------------------------------
+    // CHECK IF THE CREATOR IS A MENTOR
+    // ------------------------------------------------
+    const creator = await User.findById(user_id).select("name experience_level");
+
+    const isMentor = creator?.experience_level === "expert";
+
+    // If mentor created ANY post → notify all circle members except mentor
+    if (isMentor) {
+      const circle = await CropCircle.findById(circle_id).select("members");
+
+      const otherMembers = circle.members.filter(
+        m => m.toString() !== user_id.toString()
+      );
+
+      for (let memberId of otherMembers) {
+        await Notification.create({
+          receiver: memberId,
+          sender: user_id,
+          type: "MENTOR_POST",
+          post_id: newPost._id,
+          message: `${creator.name} (Mentor) posted in your Circle`,
+          isActive: false
+        });
+      }
+    }
+
+    // --------------------------------------------------------
+    // IF normal user posts a QUESTION → notify only mentors
+    // --------------------------------------------------------
+    if (type === "question" && !isMentor) {
+      const circle = await CropCircle.findById(circle_id).populate(
+        "mentors",
+        "name"
+      );
+
+      if (circle?.mentors?.length > 0) {
+        for (let mentor of circle.mentors) {
+          if (mentor._id.toString() === user_id.toString()) continue;
+
+          await Notification.create({
+            receiver: mentor._id,
+            sender: user_id,
+            type: "MENTOR_QUESTION",
+            post_id: newPost._id,
+            message: `${creator.name} posted a question`,
+            isActive: true // stays pinned until mentor answers
+          });
+        }
+      }
     }
 
     res.status(201).json({ message: "Post created", post: newPost });
@@ -44,6 +90,7 @@ export const createPost = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
 
 // ------------------------------------------------------------
 // GET POSTS BY CIRCLE
@@ -85,21 +132,41 @@ export const toggleLikePost = async (req, res) => {
     const { user_id } = req.body;
     console.log("[TOGGLE LIKE] Post ID:", postId, "User ID:", user_id);
 
-    const post = await Post.findById(postId);
+    const post = await Post.findById(postId).populate("user_id", "name");
     if (!post) {
       console.log("[TOGGLE LIKE] Post not found");
       return res.status(404).json({ message: "Post not found" });
     }
 
     const index = post.likes.indexOf(user_id);
-    if (index === -1) post.likes.push(user_id);
-    else post.likes.splice(index, 1);
+    const isLike = index === -1;
+
+    if (isLike) {
+      post.likes.push(user_id);
+
+      // ------------------------------------------------------------------
+      // NOTIFICATION: SEND ONLY WHEN POST OWNER IS NOT THE SAME USER
+      // ------------------------------------------------------------------
+      if (post.user_id._id.toString() !== user_id) {
+        await Notification.create({
+          receiver: post.user_id._id,
+          sender: user_id,
+          type: "LIKE",
+          post_id: post._id,
+          message: `Someone liked your post`,
+          isActive: false
+        });
+      }
+
+    } else {
+      post.likes.splice(index, 1);
+    }
 
     await post.save();
     console.log("[TOGGLE LIKE] Like toggled. Total likes:", post.likes.length);
 
     res.status(200).json({
-      message: index === -1 ? "Liked" : "Unliked",
+      message: isLike ? "Liked" : "Unliked",
       post
     });
   } catch (err) {
@@ -117,25 +184,47 @@ export const commentOnPost = async (req, res) => {
     const { user_id, text } = req.body;
     console.log("[COMMENT] Post ID:", postId, "User ID:", user_id, "Text:", text);
 
-    const post = await Post.findById(postId);
+    const post = await Post.findById(postId).populate("user_id", "name");
     if (!post) {
       console.log("[COMMENT] Post not found");
       return res.status(404).json({ message: "Post not found" });
     }
 
+    // Find the user to check if they are a mentor
+    const user = await User.findById(user_id).select("role");
+    const isMentor = user?.role === "mentor";
+
+    // Add comment
     post.comments.push({ user_id, text });
-    if (post.type === "question" && post.pinned) {
+
+    // Only unpin if MENTOR commented on a question post
+    if (post.type === "question" && post.pinned && isMentor) {
       post.pinned = false;
       post.answered_at = new Date();
+      console.log("[COMMENT] Post UNPINNED because mentor commented.");
     }
 
     await post.save();
     console.log("[COMMENT] Comment added. Total comments:", post.comments.length);
 
+    // ----------------------------------------------------------
+    // NOTIFICATION: SEND TO POST OWNER IF COMMENTER IS DIFFERENT
+    // ----------------------------------------------------------
+    if (post.user_id._id.toString() !== user_id) {
+      await Notification.create({
+        receiver: post.user_id._id,
+        sender: user_id,
+        type: "COMMENT",
+        post_id: post._id,
+        message: `Someone commented on your post`,
+        isActive: false
+      });
+    }
+
     const populated = await Post.findById(postId)
       .populate("user_id", "name profile_photo")
-      .populate("comments.user_id", "name profile_photo")
-      .populate("comments.replies.user_id", "name profile_photo");
+      .populate("comments.user_id", "name profile_photo role")
+      .populate("comments.replies.user_id", "name profile_photo role");
 
     res.status(201).json({ message: "Comment added", post: populated });
   } catch (err) {
@@ -144,30 +233,73 @@ export const commentOnPost = async (req, res) => {
   }
 };
 
+
 // ------------------------------------------------------------
 // REPLY TO COMMENT
 // ------------------------------------------------------------
+
+
 export const replyToComment = async (req, res) => {
   const { postId, commentId } = req.params;
   const { user_id, text } = req.body;
 
   try {
-    const post = await Post.findById(postId);
+    const post = await Post.findById(postId).populate("user_id", "name");
     if (!post) return res.status(404).json({ message: "Post not found" });
 
-    // Find the comment by converting commentId to ObjectId
-    const comment = post.comments.id(commentId); // Mongoose subdoc method
+    // Find parent comment
+    const comment = post.comments.id(commentId);
     if (!comment) return res.status(404).json({ message: "Comment not found in post" });
 
+    // Add reply
     comment.replies.push({ user_id, text });
     await post.save();
 
-    res.status(200).json({ post });
+    const replier = await User.findById(user_id).select("name experience_level");
+    const commentOwnerId = comment.user_id;
+
+    const isReplyToSelf = String(commentOwnerId) === String(user_id);
+    const isMentor = replier.experience_level === "expert";
+
+    // ------------------------------------
+    // 🔔 1. Send notification to comment owner (not to self)
+    // ------------------------------------
+    if (!isReplyToSelf) {
+      await Notification.create({
+        receiver: commentOwnerId,
+        sender: user_id,
+        post_id: postId,
+        type: isMentor ? "MENTOR_REPLY" : "REPLY",
+        message: isMentor
+          ? `${replier.name} (mentor) replied to your comment`
+          : `${replier.name} replied to your comment`,
+        isActive: false,
+      });
+    }
+
+    // ------------------------------------
+    // 🔔 2. Send notification to post owner (if different)
+    // ------------------------------------
+    if (String(post.user_id._id) !== String(user_id) && String(post.user_id._id) !== String(commentOwnerId)) {
+      await Notification.create({
+        receiver: post.user_id._id,
+        sender: user_id,
+        post_id: postId,
+        type: "REPLY_ON_POST",
+        message: `${replier.name} replied under your post`,
+        isActive: false,
+      });
+    }
+
+    res.status(200).json({ message: "Reply added", post });
+
   } catch (err) {
-    console.error(err);
+    console.error("[REPLY ERROR]", err);
     res.status(500).json({ message: "Server error" });
   }
 };
+
+
 // ------------------------------------------------------------
 // DELETE POST
 // ------------------------------------------------------------

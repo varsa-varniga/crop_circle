@@ -12,6 +12,7 @@ import {
 import upload from "../middleware/upload.js";
 
 
+
 const router = express.Router();
 
 // CREATE POST
@@ -43,4 +44,32 @@ router.patch("/:postId", editPost);
 // DELETE POST
 router.delete("/:postId", deletePost);
 
+
+
+// TEST: Create a fake notification
+router.post("/test/create", async (req, res) => {
+  try {
+    const { receiver, sender, type, post_id, message } = req.body;
+
+    const notif = await Notification.create({
+      receiver,
+      sender,
+      type,
+      post_id,
+      message,
+      isActive: false,
+      isRead: false
+    });
+
+    res.json({ success: true, notif });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 export default router;
+
+
+
+//test

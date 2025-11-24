@@ -24,6 +24,7 @@ const userSchema = new mongoose.Schema({
   profile_photo: { type: String, default: "" },
   bio: { type: String, default: "" },
   date_of_birth: { type: Date },
+  isMentor: { type: Boolean, default: false }, 
 
   // Experience level for mentor logic
   experience_level: {
