@@ -34,7 +34,11 @@ const userSchema = new mongoose.Schema({
   },
 
   // Optional: track which circle the user joined for quick check
-  joined_circle: { type: mongoose.Schema.Types.ObjectId, ref: "CropCircle" },
+  joined_circles: {
+  type: [mongoose.Schema.Types.ObjectId],
+  ref: "CropCircle",
+  default: []
+},
 
   created_at: { type: Date, default: Date.now },
 });

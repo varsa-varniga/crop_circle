@@ -4,11 +4,13 @@ import CropCircle from "../models/cropCircleModel.js";
 import Notification from "../models/notificationModel.js";  
 import path from "path";
 import fs from "fs";
+import User from "../models/userModel.js";
+
 
 
 export const createPost = async (req, res) => {
   try {
-    const { user_id, circle_id, content, type } = req.body;
+    const { user_id, circle_id, title, content, type } = req.body; // include title
     let media_url = null;
 
     if (req.file) {
@@ -21,9 +23,11 @@ export const createPost = async (req, res) => {
 
     const pinned = type === "question";
 
+    // Create and save post
     const newPost = new Post({
       user_id,
       circle_id,
+      title,      // ✅ include title here
       content,
       media_url,
       type,
@@ -32,65 +36,61 @@ export const createPost = async (req, res) => {
 
     await newPost.save();
 
-    // ------------------------------------------------
-    // CHECK IF THE CREATOR IS A MENTOR
-    // ------------------------------------------------
+    // Fetch creator info
     const creator = await User.findById(user_id).select("name experience_level");
-
     const isMentor = creator?.experience_level === "expert";
 
-    // If mentor created ANY post → notify all circle members except mentor
-    if (isMentor) {
-      const circle = await CropCircle.findById(circle_id).select("members");
+    // Notifications
+    try {
+      // Mentor posting → notify circle members
+      if (isMentor) {
+        const circle = await CropCircle.findById(circle_id).select("members") || { members: [] };
+        const otherMembers = circle.members.filter(m => m.toString() !== user_id.toString());
 
-      const otherMembers = circle.members.filter(
-        m => m.toString() !== user_id.toString()
-      );
-
-      for (let memberId of otherMembers) {
-        await Notification.create({
-          receiver: memberId,
-          sender: user_id,
-          type: "MENTOR_POST",
-          post_id: newPost._id,
-          message: `${creator.name} (Mentor) posted in your Circle`,
-          isActive: false
-        });
+        await Promise.all(
+          otherMembers.map(memberId =>
+            Notification.create({
+              receiver: memberId,
+              sender: user_id,
+              type: "MENTOR_POST",
+              post_id: newPost._id,
+              message: `${creator.name} (Mentor) posted in your Circle`,
+              isActive: false
+            })
+          )
+        );
       }
+
+      // Normal user asks a question → notify mentors
+      if (type === "question" && !isMentor) {
+        const circle = await CropCircle.findById(circle_id).populate("mentors", "name") || { mentors: [] };
+        const mentorsToNotify = circle.mentors.filter(mentor => mentor._id.toString() !== user_id.toString());
+
+        await Promise.all(
+          mentorsToNotify.map(mentor =>
+            Notification.create({
+              receiver: mentor._id,
+              sender: user_id,
+              type: "MENTOR_QUESTION",
+              post_id: newPost._id,
+               message: `${creator.name} raised a question in your circle,Answer now`,
+              isActive: true
+            })
+          )
+        );
+      }
+    } catch (notifyErr) {
+      console.error("[CREATE POST] Notification failed:", notifyErr);
+      // Do not fail the post creation
     }
 
-    // --------------------------------------------------------
-    // IF normal user posts a QUESTION → notify only mentors
-    // --------------------------------------------------------
-    if (type === "question" && !isMentor) {
-      const circle = await CropCircle.findById(circle_id).populate(
-        "mentors",
-        "name"
-      );
-
-      if (circle?.mentors?.length > 0) {
-        for (let mentor of circle.mentors) {
-          if (mentor._id.toString() === user_id.toString()) continue;
-
-          await Notification.create({
-            receiver: mentor._id,
-            sender: user_id,
-            type: "MENTOR_QUESTION",
-            post_id: newPost._id,
-            message: `${creator.name} posted a question`,
-            isActive: true // stays pinned until mentor answers
-          });
-        }
-      }
-    }
-
+    // Respond with the post
     res.status(201).json({ message: "Post created", post: newPost });
   } catch (err) {
     console.error("[CREATE POST] Error:", err);
     res.status(500).json({ error: err.message });
   }
 };
-
 
 // ------------------------------------------------------------
 // GET POSTS BY CIRCLE
@@ -104,16 +104,18 @@ export const getPostsByCircle = async (req, res) => {
       .populate("user_id", "name profile_photo")
       .populate("comments.user_id", "name profile_photo")
       .populate("comments.replies.user_id", "name profile_photo")
-      .sort({ pinned: -1, createdAt: -1 });
+      .sort({ pinned: -1,answered_at: -1, createdAt: -1 });
 
     console.log("[GET POSTS] Found posts:", posts.length);
 
+    // Use lean() so populates are preserved cleanly
     const formattedPosts = posts.map(post => {
+      const data = post.toObject(); // keeps all populated data
+
       const createdAt = post.createdAt || post._id.getTimestamp();
-      return {
-        ...post._doc,
-        createdAt
-      };
+      data.createdAt = createdAt;
+
+      return data;
     });
 
     res.status(200).json({ posts: formattedPosts });
@@ -125,13 +127,15 @@ export const getPostsByCircle = async (req, res) => {
 
 // ------------------------------------------------------------
 // LIKE / UNLIKE POST
-// ------------------------------------------------------------
+// -----------------------------------------------------------
+
 export const toggleLikePost = async (req, res) => {
   try {
     const { postId } = req.params;
     const { user_id } = req.body;
     console.log("[TOGGLE LIKE] Post ID:", postId, "User ID:", user_id);
 
+    // Fetch the post and populate the owner
     const post = await Post.findById(postId).populate("user_id", "name");
     if (!post) {
       console.log("[TOGGLE LIKE] Post not found");
@@ -148,12 +152,15 @@ export const toggleLikePost = async (req, res) => {
       // NOTIFICATION: SEND ONLY WHEN POST OWNER IS NOT THE SAME USER
       // ------------------------------------------------------------------
       if (post.user_id._id.toString() !== user_id) {
+        // Fetch sender's name
+        const sender = await User.findById(user_id).select("name");
+
         await Notification.create({
           receiver: post.user_id._id,
           sender: user_id,
           type: "LIKE",
           post_id: post._id,
-          message: `Someone liked your post`,
+          message: `${sender.name} liked your post`,
           isActive: false
         });
       }
@@ -175,6 +182,7 @@ export const toggleLikePost = async (req, res) => {
   }
 };
 
+
 // ------------------------------------------------------------
 // ADD COMMENT
 // ------------------------------------------------------------
@@ -184,25 +192,27 @@ export const commentOnPost = async (req, res) => {
     const { user_id, text } = req.body;
     console.log("[COMMENT] Post ID:", postId, "User ID:", user_id, "Text:", text);
 
+    // Fetch post and populate owner
     const post = await Post.findById(postId).populate("user_id", "name");
     if (!post) {
       console.log("[COMMENT] Post not found");
       return res.status(404).json({ message: "Post not found" });
     }
 
-    // Find the user to check if they are a mentor
-    const user = await User.findById(user_id).select("role");
+    // Fetch user to check role and get name
+    const user = await User.findById(user_id).select("role name");
     const isMentor = user?.role === "mentor";
 
     // Add comment
     post.comments.push({ user_id, text });
 
-    // Only unpin if MENTOR commented on a question post
+    // Unpin if mentor commented on a question post
     if (post.type === "question" && post.pinned && isMentor) {
-      post.pinned = false;
-      post.answered_at = new Date();
-      console.log("[COMMENT] Post UNPINNED because mentor commented.");
-    }
+  // Instead of only updating local post.pinned:
+  post.pinned = false;
+  post.answered_at = new Date();
+}
+
 
     await post.save();
     console.log("[COMMENT] Comment added. Total comments:", post.comments.length);
@@ -216,11 +226,12 @@ export const commentOnPost = async (req, res) => {
         sender: user_id,
         type: "COMMENT",
         post_id: post._id,
-        message: `Someone commented on your post`,
+        message: `${user.name} commented on your post`,
         isActive: false
       });
     }
 
+    // Return populated post
     const populated = await Post.findById(postId)
       .populate("user_id", "name profile_photo")
       .populate("comments.user_id", "name profile_photo role")
@@ -229,6 +240,27 @@ export const commentOnPost = async (req, res) => {
     res.status(201).json({ message: "Comment added", post: populated });
   } catch (err) {
     console.error("[COMMENT] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+
+
+// PUT /api/posts/unpin/:postId
+export const unpinPost = async (req, res) => {
+  try {
+    const { postId } = req.params;
+
+    const post = await Post.findById(postId);
+    if (!post) return res.status(404).json({ message: "Post not found" });
+
+    post.pinned = false;
+    post.answered_at = new Date();  // mark when mentor answered
+    await post.save();
+
+    res.json({ message: "Post unpinned permanently", post });
+  } catch (err) {
+    console.error("[UNPIN POST] Error:", err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -244,26 +276,40 @@ export const replyToComment = async (req, res) => {
   const { user_id, text } = req.body;
 
   try {
-    const post = await Post.findById(postId).populate("user_id", "name");
-    if (!post) return res.status(404).json({ message: "Post not found" });
+    // Find post
+    const post = await Post.findById(postId);
+    if (!post)
+      return res.status(404).json({ message: "Post not found" });
 
-    // Find parent comment
+    // Find actual comment in DB
     const comment = post.comments.id(commentId);
-    if (!comment) return res.status(404).json({ message: "Comment not found in post" });
+    if (!comment)
+      return res.status(404).json({
+        message: "Comment not found in post — possibly temporary frontend ID"
+      });
 
     // Add reply
     comment.replies.push({ user_id, text });
     await post.save();
 
+    // Fetch replying user
     const replier = await User.findById(user_id).select("name experience_level");
-    const commentOwnerId = comment.user_id;
+    if (!replier)
+      return res.status(404).json({ message: "Replying user not found" });
 
-    const isReplyToSelf = String(commentOwnerId) === String(user_id);
+    // Ensure comment user_id exists
+    if (!comment.user_id) {
+      console.error("Comment missing user_id:", commentId);
+      return res.status(500).json({ message: "Comment has no owner" });
+    }
+
+    const commentOwnerId =
+      comment.user_id?._id?.toString() || comment.user_id.toString();
+
+    const isReplyToSelf = commentOwnerId === user_id;
     const isMentor = replier.experience_level === "expert";
 
-    // ------------------------------------
-    // 🔔 1. Send notification to comment owner (not to self)
-    // ------------------------------------
+    // Notify comment owner
     if (!isReplyToSelf) {
       await Notification.create({
         receiver: commentOwnerId,
@@ -277,12 +323,13 @@ export const replyToComment = async (req, res) => {
       });
     }
 
-    // ------------------------------------
-    // 🔔 2. Send notification to post owner (if different)
-    // ------------------------------------
-    if (String(post.user_id._id) !== String(user_id) && String(post.user_id._id) !== String(commentOwnerId)) {
+    // Notify post owner
+    if (
+      post.user_id.toString() !== user_id &&
+      post.user_id.toString() !== commentOwnerId
+    ) {
       await Notification.create({
-        receiver: post.user_id._id,
+        receiver: post.user_id,
         sender: user_id,
         post_id: postId,
         type: "REPLY_ON_POST",
@@ -291,11 +338,16 @@ export const replyToComment = async (req, res) => {
       });
     }
 
-    res.status(200).json({ message: "Reply added", post });
+    // Return updated post
+    const updated = await Post.findById(postId)
+      .populate("user_id", "name profile_photo")
+      .populate("comments.user_id", "name profile_photo role")
+      .populate("comments.replies.user_id", "name profile_photo role");
 
+    return res.status(200).json({ message: "Reply added", post: updated });
   } catch (err) {
     console.error("[REPLY ERROR]", err);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 };
 

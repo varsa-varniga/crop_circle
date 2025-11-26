@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 
 const cropCircleSchema = new mongoose.Schema({
+  name: { type: String, required: true }, 
   crop_name: { type: String, required: true },
   district: { type: String, required: true },
 

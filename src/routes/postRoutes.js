@@ -7,7 +7,8 @@ import {
   replyToComment,
   deletePost,
   deleteComment,
-  editPost
+  editPost,
+  unpinPost
 } from "../controllers/postController.js";
 import upload from "../middleware/upload.js";
 
@@ -27,6 +28,8 @@ router.patch("/:postId/like", toggleLikePost);
 
 router.post("/:postId/comment/:commentId/reply", replyToComment); // MUST come first
 router.post("/:postId/comment", commentOnPost); // top-level comment
+router.put("/unpin/:postId", unpinPost);
+
 
 
 
@@ -72,4 +75,3 @@ export default router;
 
 
 
-//test
