@@ -7,9 +7,11 @@ import {
   replyToComment,
   deletePost,
   deleteComment,
-  editPost
+  editPost,
+  unpinPost
 } from "../controllers/postController.js";
 import upload from "../middleware/upload.js";
+
 
 
 const router = express.Router();
@@ -26,6 +28,8 @@ router.patch("/:postId/like", toggleLikePost);
 
 router.post("/:postId/comment/:commentId/reply", replyToComment); // MUST come first
 router.post("/:postId/comment", commentOnPost); // top-level comment
+router.put("/unpin/:postId", unpinPost);
+
 
 
 
@@ -43,4 +47,31 @@ router.patch("/:postId", editPost);
 // DELETE POST
 router.delete("/:postId", deletePost);
 
+
+
+// TEST: Create a fake notification
+router.post("/test/create", async (req, res) => {
+  try {
+    const { receiver, sender, type, post_id, message } = req.body;
+
+    const notif = await Notification.create({
+      receiver,
+      sender,
+      type,
+      post_id,
+      message,
+      isActive: false,
+      isRead: false
+    });
+
+    res.json({ success: true, notif });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 export default router;
+
+
+

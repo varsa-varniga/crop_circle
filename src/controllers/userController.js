@@ -32,7 +32,15 @@ export const uploadProfilePhoto = multer({ storage, fileFilter });
 // --------------------------
 export const registerUser = async (req, res) => {
   try {
-    const { name, email, password, experience_level, date_of_birth } = req.body;
+    const { name, email, password, experience_level, date_of_birth ,} = req.body;
+    const user = new User({
+  name,
+  email,
+  password,
+  experience_level,
+  date_of_birth,
+  isMentor: experience_level === "expert" // compute mentor status here
+});
 
     if (!name || !email || !password) {
       return res.status(400).json({ message: "Missing required fields" });
@@ -43,7 +51,7 @@ export const registerUser = async (req, res) => {
       return res.status(400).json({ message: "User already exists" });
     }
 
-    const user = new User({ name, email, password, experience_level, date_of_birth });
+    
     await user.save();
 
     res.status(201).json({
@@ -63,13 +71,16 @@ export const getUserProfile = async (req, res) => {
   try {
     const { user_id } = req.params;
 
-    const user = await User.findById(user_id).select("-password"); // exclude password
+    // Include all fields except password
+    const user = await User.findById(user_id).select("-password"); 
     if (!user) return res.status(404).json({ message: "User not found" });
 
+    // Fetch all posts by user
     const posts = await Post.find({ user_id })
       .populate("circle_id", "crop_name district")
       .sort({ created_at: -1 });
 
+    // Now user.isMentor is automatically available
     res.status(200).json({ user, posts });
   } catch (error) {
     console.error("❌ Error fetching profile:", error);
@@ -97,7 +108,12 @@ export const updateUserProfile = async (req, res) => {
 
     if (req.body.bio?.trim()) user.bio = req.body.bio.trim();
     if (req.body.date_of_birth) user.date_of_birth = req.body.date_of_birth;
-    if (req.body.experience_level) user.experience_level = req.body.experience_level;
+
+    if (req.body.experience_level) {
+      user.experience_level = req.body.experience_level;
+      // Update mentor badge dynamically
+      user.isMentor = req.body.experience_level === "expert";
+    }
 
     const updatedUser = await user.save();
     res.status(200).json({ user: updatedUser });

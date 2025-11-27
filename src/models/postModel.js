@@ -17,13 +17,15 @@ const postSchema = new mongoose.Schema(
   {
     user_id: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     circle_id: { type: mongoose.Schema.Types.ObjectId, ref: "CropCircle", required: true },
+    title: { type: String, required: true }, 
     content: { type: String },
     media_url: { type: String },
     type: { type: String },
     likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     comments: [commentSchema],
     pinned: { type: Boolean, default: false },
-    answered_at: { type: Date },
+    answered_at: { type: Date, default: null }
+
   },
   { timestamps: true }
 );

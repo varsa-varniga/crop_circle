@@ -9,6 +9,8 @@ import authRoutes from "./routes/authRoutes.js";
 import landRoutes from "./routes/landRoutes.js";
 import checkoutRoutes from "./routes/checkoutRoutes.js";
 import sprouterRoutes from "./routes/sprouterRoutes.js";
+import notificationRoutes from "./routes/notificationRoutes.js";
+
 import path from "path";
 import fs from "fs";
 
@@ -24,7 +26,7 @@ if (!fs.existsSync(uploadsDir)) {
 
 // Connect MongoDB
 connectDB();
-
+app.use(express.json());
 // Middleware
 app.use(cors({
   origin: ["http://localhost:5173", "http://localhost:5174"],
@@ -35,6 +37,11 @@ app.use(cors({
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use("/api/notifications", notificationRoutes);
+
+
+
+
 
 // Serve static files (uploaded images/documents)
 app.use("/uploads", express.static(path.join(path.resolve(), "uploads")));

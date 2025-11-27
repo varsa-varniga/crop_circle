@@ -1,94 +1,97 @@
 // src/controllers/cropCircleController.js
 import CropCircle from "../models/cropCircleModel.js";
 import User from "../models/userModel.js";
+import Notification from "../models/notificationModel.js";
+import { generateCircleName } from "../utils/generateCirclename.js";
 
+// Login user
 export const loginUser = async (req, res) => {
   const { email, password } = req.body;
   const user = await User.findOne({ email });
 
   if (!user) return res.status(404).json({ message: "User not found" });
 
-  // validate password or Google login here
-  
   let circle = null;
   if (user.joined_circle) {
     circle = await CropCircle.findById(user.joined_circle);
+
+    // Ensure circle has a name
+    if (circle && !circle.name) {
+      circle.name = generateCircleName(circle.crop_name, circle.district);
+      await circle.save();
+    }
   }
 
-  res.status(200).json({
-    user,
-    circle, // returns null if not joined yet
-  });
+  res.status(200).json({ user, circle });
 };
-// Join or Create Crop Circle (manual district selection)
+
+// Join or Create Crop Circle
+// Join or create a crop circle
 export const joinOrCreateCircle = async (req, res) => {
   try {
-    const { user_id, crop_name, district } = req.body;
+    let { user_id, crop_name, district } = req.body;
 
-    // ✅ Validate input
-    if (!user_id || !crop_name || !district) {
+    if (!user_id || !crop_name || !district)
       return res.status(400).json({ message: "Missing required fields" });
-    }
 
-    // 1️⃣ Fetch user
     const user = await User.findById(user_id);
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
+    if (!user) return res.status(404).json({ message: "User not found" });
 
-    // 1.5️⃣ Check if user already has a joined circle
-    if (user.joined_circle) {
-      const existingCircle = await CropCircle.findById(user.joined_circle);
-      return res.status(200).json({
-        message: `You have already joined a Crop Circle for ${existingCircle.crop_name} in ${existingCircle.district}`,
-        circle: existingCircle,
+    // Normalize crop_name to lowercase to prevent duplicates
+    const normalizedCrop = crop_name.trim().toLowerCase();
+
+    // Check if circle already exists (case-insensitive match)
+    let circle = await CropCircle.findOne({
+      crop_name: { $regex: `^${normalizedCrop}$`, $options: "i" },
+      district,
+    });
+
+    if (!circle) {
+      // CREATE new circle
+      const circleName = generateCircleName(crop_name, district);
+      const mentors = user.experience_level === "expert" ? [user_id] : [];
+      circle = new CropCircle({
+        name: circleName,
+        crop_name: normalizedCrop, // store normalized value
+        district,
+        members: [user_id],
+        mentors,
       });
-    }
-
-    // 2️⃣ Find existing circle for crop + district
-    let circle = await CropCircle.findOne({ crop_name, district });
-
-    if (circle) {
-      // Add user to circle if not already a member
+      await circle.save();
+    } else {
+      // JOIN existing circle
       if (!circle.members.includes(user_id)) {
         circle.members.push(user_id);
-
-        // Assign mentor role if user is expert
         if (user.experience_level === "expert" && !circle.mentors.includes(user_id)) {
           circle.mentors.push(user_id);
         }
-
         await circle.save();
 
-        // Update user's joined_circle
-        user.joined_circle = circle._id;
-        await user.save();
+        // Notify existing members
+        const existingMembers = circle.members.filter(
+          (m) => m.toString() !== user_id.toString()
+        );
+        for (let memberId of existingMembers) {
+          await Notification.create({
+            receiver: memberId,
+            sender: user_id,
+            type: "NEW_MEMBER",
+            circle_id: circle._id,
+            message: `${user.name} joined your Crop Circle`,
+            isActive: false,
+          });
+        }
       }
-
-      return res.status(200).json({
-        message: `Joined existing Crop Circle for ${crop_name} in ${district}`,
-        role: user.experience_level === "expert" ? "Mentor" : "Learner",
-        circle,
-      });
     }
 
-    // 3️⃣ Create new circle if none exists
-    const mentors = user.experience_level === "expert" ? [user_id] : [];
-    circle = new CropCircle({
-      crop_name,
-      district,
-      members: [user_id],
-      mentors,
-    });
+    // Add circle to user's joined_circles
+    if (!user.joined_circles.includes(circle._id)) {
+      user.joined_circles.push(circle._id);
+      await user.save();
+    }
 
-    await circle.save();
-
-    // Update user's joined_circle
-    user.joined_circle = circle._id;
-    await user.save();
-
-    return res.status(201).json({
-      message: `Created new Crop Circle for ${crop_name} in ${district}`,
+    return res.status(200).json({
+      message: `Joined/Created Crop Circle for ${crop_name} in ${district}`,
       role: user.experience_level === "expert" ? "Mentor" : "Learner",
       circle,
     });
@@ -98,68 +101,63 @@ export const joinOrCreateCircle = async (req, res) => {
   }
 };
 
-// Manually assign a mentor to a crop circle
+// Get user's circle
+export const getMyCircles = async (req, res) => {
+  try {
+    const { user_id } = req.query;
+    if (!user_id) return res.status(400).json({ message: "user_id is required" });
+
+    const user = await User.findById(user_id).populate("joined_circles");
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    res.status(200).json({ circles: user.joined_circles });
+  } catch (err) {
+    console.error("Error fetching user circles:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+
+// Assign mentor manually
 export const assignMentor = async (req, res) => {
   try {
     const { circle_id, user_id } = req.body;
 
-    if (!circle_id || !user_id) {
+    if (!circle_id || !user_id)
       return res.status(400).json({ message: "circle_id and user_id are required" });
-    }
 
     const circle = await CropCircle.findById(circle_id);
-    if (!circle) {
-      return res.status(404).json({ message: "Crop Circle not found" });
-    }
+    if (!circle) return res.status(404).json({ message: "Crop Circle not found" });
 
-    // Add mentor if not already present
     if (!circle.mentors.includes(user_id)) {
       circle.mentors.push(user_id);
       await circle.save();
     }
 
-    return res.status(200).json({
-      message: "Mentor assigned successfully",
-      circle,
-    });
+    res.status(200).json({ message: "Mentor assigned successfully", circle });
   } catch (error) {
     console.error("Error assigning mentor:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
 
-
-
-
-
-
-// Check if user already joined a crop circle
-export const getMyCircle = async (req, res) => {
+// Get circle by ID
+export const getCircleById = async (req, res) => {
   try {
-    const { user_id } = req.query; // GET request query
+    const { id } = req.params;
+    const circle = await CropCircle.findById(id);
 
-    if (!user_id) return res.status(400).json({ message: "user_id is required" });
+    if (!circle) return res.status(404).json({ message: "Circle not found" });
 
-    const user = await User.findById(user_id);
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    if (!user.joined_circle) {
-      return res.status(200).json({ alreadyJoined: false });
+    // Ensure circle has a name
+    if (!circle.name) {
+      circle.name = generateCircleName(circle.crop_name, circle.district);
+      await circle.save();
     }
 
-    // Fetch circle first
-    const circle = await CropCircle.findById(user.joined_circle);
-
-    // Determine role
-    const role = circle.mentors.includes(user._id) ? "Mentor" : "Learner";
-
-    return res.status(200).json({
-      alreadyJoined: true,
-      role,
-      circle,
-    });
-  } catch (err) {
-    console.error("Error fetching user circle:", err);
-    res.status(500).json({ message: "Server error", error: err.message });
+    res.status(200).json(circle);
+  } catch (error) {
+    console.error("Error fetching circle by ID:", error);
+    res.status(500).json({ message: "Error fetching circle", error: error.message });
   }
 };
