@@ -3,8 +3,8 @@ import { googleLogin, emailLogin, registerUser } from "../controllers/authContro
 
 const router = express.Router();
 
-router.post("/login-google", googleLogin);  // Only Google accounts
-router.post("/login", emailLogin);         // Only manual accounts
-router.post("/register", registerUser);    // Manual signup
+router.post("/login", emailLogin);
+router.post("/login-google", googleLogin);
+router.post("/register", registerUser);
 
 export default router;
