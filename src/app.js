@@ -10,6 +10,7 @@ import landRoutes from "./routes/landRoutes.js";
 import checkoutRoutes from "./routes/checkoutRoutes.js";
 import sprouterRoutes from "./routes/sprouterRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
+import satelliteRoutes from './routes/satelliteRoutes.js';
 
 import path from "path";
 import fs from "fs";
@@ -17,6 +18,7 @@ import fs from "fs";
 dotenv.config();
 const app = express();
 
+import carbonRoutes from './routes/carbonRoutes.js';
 // Create uploads folder if it doesn't exist
 const uploadsDir = path.join(path.resolve(), 'uploads');
 if (!fs.existsSync(uploadsDir)) {
@@ -54,6 +56,8 @@ app.use("/api/posts", postRoutes);
 app.use("/api/lands", landRoutes);
 app.use("/api/checkout", checkoutRoutes);
 app.use("/api/sprouters", sprouterRoutes);
+app.use("/api/carbon", carbonRoutes);
+app.use("/api/satellite", satelliteRoutes);
 
 // Root route with all endpoints
 app.get("/", (req, res) => {
