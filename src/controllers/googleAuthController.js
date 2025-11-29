@@ -1,7 +1,4 @@
-// controllers/authController.js
-import admin from "../../firebaseAdmin.js";
-
-
+import admin from "../firebaseAdmin.js";
 import User from "../models/userModel.js";
 
 export const syncGoogleUser = async (req, res) => {
@@ -23,8 +20,8 @@ export const syncGoogleUser = async (req, res) => {
         profile_photo: picture || "",
         experience_level: "beginner",
         isMentor: false,
-        joined_circles: [],
-        created_at: new Date(),
+        joined_circles: [],      // initialize empty array
+        created_at: new Date(),   // initialize creation date
       });
     }
 

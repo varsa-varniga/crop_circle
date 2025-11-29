@@ -1,19 +1,24 @@
 import mongoose from "mongoose";
 
+
 const cropCircleSchema = new mongoose.Schema({
-  name: { type: String, required: true }, 
+  name: { type: String, required: true },
   crop_name: { type: String, required: true },
   district: { type: String, required: true },
+
 
   // All circle members (learners + mentors)
   members: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
 
+
   // Mentors (subset of members)
   mentors: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+
 
   // Optional content for community interactions
   posts: [{ type: mongoose.Schema.Types.ObjectId, ref: "Post" }],
   questions: [{ type: mongoose.Schema.Types.ObjectId, ref: "Question" }],
+
 
   // Stats to avoid expensive count queries
   stats: {
@@ -21,10 +26,12 @@ const cropCircleSchema = new mongoose.Schema({
     total_mentors: { type: Number, default: 0 },
   },
 
+
   // Timestamps for creation & updates
   created_at: { type: Date, default: Date.now },
   updated_at: { type: Date, default: Date.now },
 });
+
 
 // 🔁 Pre-save middleware to auto-update stats & updated_at timestamp
 cropCircleSchema.pre("save", function (next) {
@@ -34,6 +41,7 @@ cropCircleSchema.pre("save", function (next) {
   next();
 });
 cropCircleSchema.index({ crop_name: 1, district: 1 }, { unique: true });
+
 
 // ✅ ESM export
 const CropCircle = mongoose.model("CropCircle", cropCircleSchema);
