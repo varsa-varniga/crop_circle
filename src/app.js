@@ -9,6 +9,13 @@ import userRoutes from "./routes/userRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import sprouterRoutes from "./routes/sprouterRoutes.js";  // VERY IMPORTANT
+import checkoutRoutes from "./routes/checkoutRoutes.js";
+import landRoutes from "./routes/landRoutes.js";
+import availabilityRoutes from "./routes/availabilityRoutes.js";
+import farmProfileRoutes from "./routes/farmProfileRoutes.js"; // Add Farm Profile
+
+
+
 
 import path from "path";
 
@@ -35,6 +42,12 @@ app.use("/uploads", express.static(path.join(path.resolve(), "uploads")));
 // Mount routes
 app.use("/api/sprouter", sprouterRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/checkout", checkoutRoutes);
+app.use("/api/lands", landRoutes);
+app.use("/api/availability", availabilityRoutes);
+app.use("/api/farm-profile", farmProfileRoutes); // Add Farm Profile routes
+
+
 
 
 // Routes
