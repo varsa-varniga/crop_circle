@@ -13,8 +13,7 @@ import checkoutRoutes from "./routes/checkoutRoutes.js";
 import landRoutes from "./routes/landRoutes.js";
 import availabilityRoutes from "./routes/availabilityRoutes.js";
 import farmProfileRoutes from "./routes/farmProfileRoutes.js"; // Add Farm Profile
-
-
+import aggregatorRoutes from './routes/aggregatorRoutes.js';
 
 
 import path from "path";
@@ -47,6 +46,8 @@ app.use("/api/lands", landRoutes);
 app.use("/api/availability", availabilityRoutes);
 app.use("/api/farm-profile", farmProfileRoutes); // Add Farm Profile routes
 
+//aggregatior routes
+app.use('/api/aggregator', aggregatorRoutes);
 
 
 
