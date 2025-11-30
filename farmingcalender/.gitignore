@@ -1,0 +1,28 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environment
+farming_env/
+venv/
+env/
+
+# Node modules
+node_modules/
+
+# Machine learning model files (optional)
+*.joblib
+*.pkl
+*.h5
+
+# Temp / debug files
+-d
+-H
+*.log
+
+# VSCode settings (optional)
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
