@@ -1,18 +1,23 @@
 import express from "express";
-import { 
-  registerUser, 
-  getUserProfile, 
+import {
+  registerUser,
+  getUserProfile,
   updateUserProfile,
   uploadProfilePhoto // ← import this from your controller
 } from "../controllers/userController.js";
 
+
 const router = express.Router();
+
 
 // POST /api/users/register
 router.post("/register", registerUser);
 
+
 // GET /api/users/:user_id/profile → fetch user profile + posts
 router.get("/:user_id/profile", getUserProfile);
+
+
 
 
 // PATCH /api/users/:user_id/profile → update profile photo and bio
@@ -24,4 +29,7 @@ router.patch(
 );
 
 
+
+
 export default router;
+

@@ -1,10 +1,9 @@
+// routes/authRoutes.js
 import express from "express";
-import { googleLogin, emailLogin, registerUser } from "../controllers/authController.js";
+import { syncGoogleUser } from "../controllers/authController.js";
 
 const router = express.Router();
 
-router.post("/login", emailLogin);
-router.post("/login-google", googleLogin);
-router.post("/register", registerUser);
+router.post("/sync-google-user", syncGoogleUser);
 
 export default router;
